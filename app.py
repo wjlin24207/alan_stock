@@ -6,15 +6,15 @@ import pandas as pd
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
 st.title("📊 全球重要指數與期貨即時看板")
 
-# 監控的商品代號 (已完全移除台指期)
+# 監控的商品代號與對應點數跳轉的外部連結
 market_tickers = {
-    "小道瓊": "YM=F",
-    "小S&P500": "ES=F",
-    "小那斯達克": "NQ=F",
-    "道瓊指數": "^DJI",
-    "S&P500": "^GSPC",
-    "那斯達克": "^IXIC",
-    "費城半導體": "^SOX"
+    "小道瓊": {"ticker": "YM=F", "url": "https://finance.yahoo.com/quote/YM=F"},
+    "小S&P500": {"ticker": "ES=F", "url": "https://finance.yahoo.com/quote/ES=F"},
+    "小那斯達克": {"ticker": "NQ=F", "url": "https://finance.yahoo.com/quote/NQ=F"},
+    "道瓊指數": {"ticker": "^DJI", "url": "https://finance.yahoo.com/quote/^DJI"},
+    "S&P500": {"ticker": "^GSPC", "url": "https://finance.yahoo.com/quote/^GSPC"},
+    "那斯達克": {"ticker": "^IXIC", "url": "https://finance.yahoo.com/quote/^IXIC"},
+    "費城半導體": {"ticker": "^SOX", "url": "https://finance.yahoo.com/quote/^SOX"}
 }
 
 def fetch_yahoo_historical_fallback(ticker):
@@ -50,7 +50,8 @@ def fetch_realtime_api_data(tickers_dict):
     
     raw_results = {}
     
-    for name, ticker in tickers_dict.items():
+    for name, info in tickers_dict.items():
+        ticker = info["ticker"]
         # 先用日線拿歷史最後價格「預先打底」，保證絕不為 None
         base_price, base_change, base_pct = fetch_yahoo_historical_fallback(ticker)
         current_price = base_price if base_price else 0.0
@@ -119,14 +120,17 @@ df_display = df_market.copy()
 numeric_cols = ["最新價格", "漲跌點數", "漲跌幅 (%)"]
 df_display[numeric_cols] = df_display[numeric_cols].round(2)
 
-# --- 自訂精美即時字卡元件 (紅漲綠跌邏輯) ---
-def render_custom_metric(name, df):
+# --- 自訂精美即時字卡元件 (紅漲綠跌邏輯 + 支援超連結與懸停動畫) ---
+def render_custom_metric(name, df, tickers_dict):
     row_filter = df[df["商品名稱"] == name]
     if not row_filter.empty:
         row = row_filter.iloc[0]
         price = row["最新價格"]
         change = row["漲跌點數"]
         pct = row["漲跌幅 (%)"]
+        
+        # 取得該商品預設的外部連結
+        target_url = tickers_dict.get(name, {}).get("url", "#")
         
         if price > 0:
             if change > 0:
@@ -142,22 +146,28 @@ def render_custom_metric(name, df):
                 icon = "—"
                 sign = ""
             
+            # 使用 <a> 標籤包裹整個卡片，並移除底線與文字顏色干擾
             st.markdown(
                 f"""
-                <div style="
-                    background-color: #1E222D; 
-                    padding: 16px; 
-                    border-radius: 10px; 
-                    border-left: 6px solid {color};
-                    margin-bottom: 12px;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                ">
-                    <div style="color: #AEB3B7; font-size: 14px; font-weight: 500; margin-bottom: 6px;">{name}</div>
-                    <div style="color: #FFFFFF; font-size: 28px; font-weight: 700; font-family: monospace; line-height: 1.2;">{price:,.2f}</div>
-                    <div style="color: {color}; font-size: 15px; font-weight: 600; margin-top: 4px; font-family: monospace;">
-                        {icon} {sign}{change:,.2f} ({sign}{pct:.2f}%)
+                <a href="{target_url}" target="_blank" style="text-decoration: none; color: inherit;">
+                    <div style="
+                        background-color: #1E222D; 
+                        padding: 16px; 
+                        border-radius: 10px; 
+                        border-left: 6px solid {color};
+                        margin-bottom: 12px;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                        cursor: pointer;
+                        transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 12px rgba(0,0,0,0.2)';" 
+                       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.1)';">
+                        <div style="color: #AEB3B7; font-size: 14px; font-weight: 500; margin-bottom: 6px;">{name} ↗</div>
+                        <div style="color: #FFFFFF; font-size: 28px; font-weight: 700; font-family: monospace; line-height: 1.2;">{price:,.2f}</div>
+                        <div style="color: {color}; font-size: 15px; font-weight: 600; margin-top: 4px; font-family: monospace;">
+                            {icon} {sign}{change:,.2f} ({sign}{pct:.2f}%)
+                        </div>
                     </div>
-                </div>
+                </a>
                 """, 
                 unsafe_allow_html=True
             )
@@ -172,7 +182,7 @@ cols = [col1, col2, col3]
 
 for name, col in zip(futures_names, cols):
     with col:
-        render_custom_metric(name, df_display)
+        render_custom_metric(name, df_display, market_tickers)
 
 st.markdown("---")
 
@@ -184,7 +194,7 @@ cols_idx = [col4, col5, col6, col7]
 
 for name, col in zip(index_names, cols_idx):
     with col:
-        render_custom_metric(name, df_display)
+        render_custom_metric(name, df_display, market_tickers)
 
 # 3. 資料總表
 st.markdown("### 📋 數據總覽")
