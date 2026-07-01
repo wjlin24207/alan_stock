@@ -165,7 +165,7 @@ def style_positive_negative(val):
 df_final_table = df_display.fillna("N/A")
 styled_df = df_final_table.style.map(style_positive_negative, subset=["漲跌點數", "漲跌幅 (%)"])
 
-# 🔴 修正處：加入了 hide_index=True 隱藏左側的 01234567 序號
+# 🔴 修正處：將 "漲跌幅 (%)" 的 format 改為 "%.2f%%"，這樣數字後方就會自動補上 %
 st.dataframe(
     styled_df, 
     use_container_width=True,
@@ -173,6 +173,6 @@ st.dataframe(
     column_config={
         "最新價格": st.column_config.NumberColumn(format="%.2f"),
         "漲跌點數": st.column_config.NumberColumn(format="%.2f"),
-        "漲跌幅 (%)": st.column_config.NumberColumn(format="%.2f")
+        "漲跌幅 (%)": st.column_config.NumberColumn(format="%.2f%%")
     }
 )
