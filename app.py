@@ -6,15 +6,15 @@ import pandas as pd
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
 st.title("📊 全球重要指數與期貨即時看板")
 
-# 監控的商品代號、對應跳轉連結，以及 🔴 修正後支援免登入公開渲染的 TradingView 代號
+# 監控的商品代號、對應跳轉連結，以及 🔴 100% 正統大盤指數（免 ETF）的 TradingView 開放代號
 market_tickers = {
     "小道瓊": {"ticker": "YM=F", "url": "https://finance.yahoo.com/quote/YM=F", "tv_symbol": "CAPITALCOM:US30"},
     "小S&P500": {"ticker": "ES=F", "url": "https://finance.yahoo.com/quote/ES=F", "tv_symbol": "CAPITALCOM:US500"},
     "小那斯達克": {"ticker": "NQ=F", "url": "https://finance.yahoo.com/quote/NQ=F", "tv_symbol": "CAPITALCOM:US100"},
     "道瓊指數": {"ticker": "^DJI", "url": "https://finance.yahoo.com/quote/^DJI", "tv_symbol": "DJ:DJI"},
-    "S&P500": {"ticker": "^GSPC", "url": "https://finance.yahoo.com/quote/^GSPC", "tv_symbol": "SP:SPX"},
-    "那斯達克": {"ticker": "^IXIC", "url": "https://finance.yahoo.com/quote/^IXIC", "tv_symbol": "NASDAQ:IXIC"},
-    "費城半導體": {"ticker": "^SOX", "url": "https://finance.yahoo.com/quote/^SOX", "tv_symbol": "PHLX:SOX"}
+    "S&P500": {"ticker": "^GSPC", "url": "https://finance.yahoo.com/quote/^GSPC", "tv_symbol": "SPX"},
+    "那斯達克": {"ticker": "^IXIC", "url": "https://finance.yahoo.com/quote/^IXIC", "tv_symbol": "IXIC"},
+    "費城半導體": {"ticker": "^SOX", "url": "https://finance.yahoo.com/quote/^SOX", "tv_symbol": "SOX"}
 }
 
 def fetch_yahoo_historical_fallback(ticker):
@@ -119,22 +119,7 @@ def render_custom_metric_with_chart(name, df, tickers_dict):
         tv_symbol = tickers_dict.get(name, {}).get("tv_symbol", "")
         
         if price > 0:
-            if change > 0:
-                color = "#00B050" if "F" in tickers_dict.get(name, {}).get("ticker", "") and name != "台指期貨 (近月)" else "#FF4B4B"
-                # 配合美股顏色：上漲為綠，下跌為紅
-                color = "#00B050" if change > 0 else "#FF4B4B"
-                icon = "▲" if change > 0 else "▼"
-                sign = "+" if change > 0 else ""
-            elif change < 0:
-                color = "#FF4B4B"
-                icon = "▼"
-                sign = ""
-            else:
-                color = "#888888"
-                icon = "—"
-                sign = ""
-                
-            # 🔴 統一介面顏色呈現：畫面上顯示綠色代表上漲，紅色代表下跌
+            # 統一全球看盤視覺：上漲為綠（#00B050），下跌為紅（#FF4B4B）
             if change > 0:
                 color = "#00B050"
                 icon = "▲"
