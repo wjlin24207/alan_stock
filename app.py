@@ -55,23 +55,43 @@ def fetch_realtime_api_data(tickers_dict):
         change = None
         change_pct = None
         try:
-            # 1. 優先嘗試 Yahoo 即時分 K 接口
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
-            response = requests.get(url, headers=headers, timeout=4)
+            # 1. 🚀 優先改用 Quote 快照接口，這能保證攔截到台指期夜盤正在跳動的即時數據
+            quote_url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={ticker}"
+            quote_res = requests.get(quote_url, headers=headers, timeout=4)
             
-            if response.status_code == 200:
-                res_json = response.json()
-                meta = res_json.get('chart', {}).get('result', [{}])[0].get('meta', {})
-                if meta:
-                    current_price = meta.get('regularMarketPrice')
-                    prev_price = meta.get('previousClose')
+            if quote_res.status_code == 200:
+                quote_json = quote_res.json()
+                result = quote_json.get('quoteResponse', {}).get('result', [{}])[0]
+                
+                if result:
+                    current_price = result.get('regularMarketPrice')
+                    prev_price = result.get('regularMarketPreviousClose')
+                    
+                    # 特殊夜盤時段：若常規常駐欄位空值，抓取 post/pre 欄位應急
+                    if current_price is None:
+                        current_price = result.get('postMarketPrice') or result.get('preMarketPrice')
+                        
                     if current_price and prev_price:
                         change = current_price - prev_price
                         change_pct = (change / prev_price) * 100
 
-            # 2. 核心判斷：如果即時接口沒吐資料（例如台指期未開盤時）
+            # 2. 備援嘗試：若快照接口失敗，再走原本的即時分 K 線 (chart) 接口
             if current_price is None or pd.isna(current_price):
-                # 直接啟動純 requests 日線保底，強行把昨收的數值挖出來
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
+                response = requests.get(url, headers=headers, timeout=4)
+                
+                if response.status_code == 200:
+                    res_json = response.json()
+                    meta = res_json.get('chart', {}).get('result', [{}])[0].get('meta', {})
+                    if meta:
+                        current_price = meta.get('regularMarketPrice')
+                        prev_price = meta.get('previousClose')
+                        if current_price and prev_price:
+                            change = current_price - prev_price
+                            change_pct = (change / prev_price) * 100
+
+            # 3. 終極保底判斷：如果即時接口都沒吐資料（例如未開盤或斷線時）
+            if current_price is None or pd.isna(current_price):
                 yf_price, yf_change, yf_pct = fetch_yahoo_historical_fallback(ticker)
                 if yf_price:
                     current_price, change, change_pct = yf_price, yf_change, yf_pct
@@ -87,7 +107,7 @@ def fetch_realtime_api_data(tickers_dict):
                 data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
                 
         except Exception:
-            # 萬一整個 try 區塊發生非預期崩潰，做最後一線的日線保底
+            # 萬一整個 try 區塊發生非預期崩潰，做最後一線的日線歷史保底
             yf_price, yf_change, yf_pct = fetch_yahoo_historical_fallback(ticker)
             if yf_price is not None:
                 data_list.append({
