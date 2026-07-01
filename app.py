@@ -6,30 +6,6 @@ import pandas as pd
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
 st.title("📊 全球重要指數與期貨即時看板")
 
-# 🔴 完美修正：全域 CSS 覆蓋，確保現貨與期貨的顏色完全同步為紅漲綠跌
-st.html(
-    """
-    <style>
-    /* 【紅色：正數】強制將所有代表正向變動的文字與箭頭圖標改為紅色 */
-    [data-testid="stMetricDelta"] div,
-    [data-testid="stMetricDelta"] span,
-    [data-testid="stMetricDelta"] svg {
-        color: #FF4B4B !important;
-        fill: #FF4B4B !important;
-    }
-    
-    /* 【綠色：負數】強制將所有代表負向變動的文字與箭頭圖標改為綠色 */
-    [data-testid="stMetricDelta"] div:has(span[data-pytest="stMetricDeltaValue"]),
-    [data-testid="stMetricDelta"] div[data-pytest="stMetricDeltaValue"],
-    [data-testid="stMetricDelta"] div[data-pytest="stMetricDeltaValue"] > span,
-    [data-testid="stMetricDelta"] div[data-pytest="stMetricDeltaValue"] svg {
-        color: #00B050 !important;
-        fill: #00B050 !important;
-    }
-    </style>
-    """
-)
-
 # 監控的商品代號
 market_tickers = {
     "台指期貨 (近月)": "WTX=F",
@@ -76,7 +52,7 @@ def fetch_realtime_api_data(tickers_dict):
                         
             data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
         except Exception:
-            data_list.append({"商品名稱": name, "最新價格": None, "漲跌點現": None, "漲跌幅 (%)": None})
+            data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
             
     return pd.DataFrame(data_list)
 
@@ -92,22 +68,66 @@ df_display = df_market.copy()
 numeric_cols = ["最新價格", "漲跌點數", "漲跌幅 (%)"]
 df_display[numeric_cols] = df_display[numeric_cols].round(2)
 
-# --- 介面呈現 ---
-
-def render_metric_card(name, df):
+# --- 自訂精美即時字卡元件 (🔴 100% 掌握台股紅漲綠跌邏輯) ---
+def render_custom_metric(name, df):
     row_filter = df[df["商品名稱"] == name]
     if not row_filter.empty:
         row = row_filter.iloc[0]
-        if pd.notna(row["最新價格"]):
-            val_str = f"{row['最新價格']:,.2f}"
-            delta_str = f"{row['漲跌點數']:+.2f} ({row['漲跌幅 (%)']:+.2f}%)"
-            st.metric(label=name, value=val_str, delta=delta_str)
+        price = row["最新價格"]
+        change = row["漲跌點數"]
+        pct = row["漲跌幅 (%)"]
+        
+        if pd.notna(price):
+            # 由 Python 後端直接判斷顏色與箭頭符號
+            if change > 0:
+                color = "#FF4B4B"  # 台灣習慣：上漲為紅
+                icon = "▲"
+                sign = "+"
+            elif change < 0:
+                color = "#00B050"  # 台灣習慣：下跌為綠
+                icon = "▼"
+                sign = ""
+            else:
+                color = "#888888"  # 平盤為灰
+                icon = "—"
+                sign = ""
+            
+            # 透過 HTML/CSS 渲染出比官方更精美的深色系金融字卡
+            st.markdown(
+                f"""
+                <div style="
+                    background-color: #1E222D; 
+                    padding: 16px; 
+                    border-radius: 10px; 
+                    border-left: 6px solid {color};
+                    margin-bottom: 12px;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                ">
+                    <div style="color: #AEB3B7; font-size: 14px; font-weight: 500; margin-bottom: 6px;">{name}</div>
+                    <div style="color: #FFFFFF; font-size: 28px; font-weight: 700; font-family: monospace; line-height: 1.2;">{price:,.2f}</div>
+                    <div style="color: {color}; font-size: 15px; font-weight: 600; margin-top: 4px; font-family: monospace;">
+                        {icon} {sign}{change:,.2f} ({sign}{pct:.2f}%)
+                    </div>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
         else:
-            st.error(f"❌ {name} 即時資料獲取失敗")
+            st.markdown(
+                f"""
+                <div style="background-color: #1E222D; padding: 16px; border-radius: 10px; border-left: 6px solid #FF4B4B;">
+                    <div style="color: #AEB3B7; font-size: 14px;">{name}</div>
+                    <div style="color: #FF4B4B; font-size: 16px; font-weight: bold; margin-top: 5px;">❌ 即時資料獲取失敗</div>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+
+# --- 介面呈現 ---
 
 # 1. 台灣市場區塊
 st.subheader("🇹🇼 台灣期貨市場")
-render_metric_card("台指期貨 (近月)", df_display)
+render_custom_metric("台指期貨 (近月)", df_display)
 
 st.markdown("---")
 
@@ -119,7 +139,7 @@ cols = [col1, col2, col3]
 
 for name, col in zip(futures_names, cols):
     with col:
-        render_metric_card(name, df_display)
+        render_custom_metric(name, df_display)
 
 st.markdown("---")
 
@@ -131,7 +151,7 @@ cols_idx = [col4, col5, col6, col7]
 
 for name, col in zip(index_names, cols_idx):
     with col:
-        render_metric_card(name, df_display)
+        render_custom_metric(name, df_display)
 
 # 4. 資料總表
 st.markdown("### 📋 數據總覽")
