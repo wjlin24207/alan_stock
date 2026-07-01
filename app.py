@@ -4,13 +4,13 @@ import pandas as pd
 
 # 設定網頁標題與配置
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
-st.title("📊 全球重要指數與期貨即時看板 (自帶即時分時圖)")
+st.title("📊 全球重要指數與期貨即時看板")
 
-# 監控的商品代號、對應跳轉連結，以及 TradingView 專用的 Symbol 名稱
+# 監控的商品代號、對應跳轉連結，以及 🔴 修正後支援免登入公開渲染的 TradingView 代號
 market_tickers = {
-    "小道瓊": {"ticker": "YM=F", "url": "https://finance.yahoo.com/quote/YM=F", "tv_symbol": "CBOT:YM1!"},
-    "小S&P500": {"ticker": "ES=F", "url": "https://finance.yahoo.com/quote/ES=F", "tv_symbol": "CME:ES1!"},
-    "小那斯達克": {"ticker": "NQ=F", "url": "https://finance.yahoo.com/quote/NQ=F", "tv_symbol": "CME:NQ1!"},
+    "小道瓊": {"ticker": "YM=F", "url": "https://finance.yahoo.com/quote/YM=F", "tv_symbol": "CAPITALCOM:US30"},
+    "小S&P500": {"ticker": "ES=F", "url": "https://finance.yahoo.com/quote/ES=F", "tv_symbol": "CAPITALCOM:US500"},
+    "小那斯達克": {"ticker": "NQ=F", "url": "https://finance.yahoo.com/quote/NQ=F", "tv_symbol": "CAPITALCOM:US100"},
     "道瓊指數": {"ticker": "^DJI", "url": "https://finance.yahoo.com/quote/^DJI", "tv_symbol": "DJ:DJI"},
     "S&P500": {"ticker": "^GSPC", "url": "https://finance.yahoo.com/quote/^GSPC", "tv_symbol": "SP:SPX"},
     "那斯達克": {"ticker": "^IXIC", "url": "https://finance.yahoo.com/quote/^IXIC", "tv_symbol": "NASDAQ:IXIC"},
@@ -97,7 +97,6 @@ def fetch_realtime_api_data(tickers_dict):
         })
     return pd.DataFrame(data_list)
 
-# 重新整理按鈕
 if st.button("🔄 點擊強制刷新最新跳動"):
     st.cache_data.clear()
 
@@ -108,7 +107,6 @@ df_display = df_market.copy()
 numeric_cols = ["最新價格", "漲跌點數", "漲跌幅 (%)"]
 df_display[numeric_cols] = df_display[numeric_cols].round(2)
 
-# --- 🔴 核心新增：自訂精美卡片 + 內嵌 TradingView 即時分時圖 ---
 def render_custom_metric_with_chart(name, df, tickers_dict):
     row_filter = df[df["商品名稱"] == name]
     if not row_filter.empty:
@@ -122,11 +120,27 @@ def render_custom_metric_with_chart(name, df, tickers_dict):
         
         if price > 0:
             if change > 0:
+                color = "#00B050" if "F" in tickers_dict.get(name, {}).get("ticker", "") and name != "台指期貨 (近月)" else "#FF4B4B"
+                # 配合美股顏色：上漲為綠，下跌為紅
+                color = "#00B050" if change > 0 else "#FF4B4B"
+                icon = "▲" if change > 0 else "▼"
+                sign = "+" if change > 0 else ""
+            elif change < 0:
                 color = "#FF4B4B"
+                icon = "▼"
+                sign = ""
+            else:
+                color = "#888888"
+                icon = "—"
+                sign = ""
+                
+            # 🔴 統一介面顏色呈現：畫面上顯示綠色代表上漲，紅色代表下跌
+            if change > 0:
+                color = "#00B050"
                 icon = "▲"
                 sign = "+"
             elif change < 0:
-                color = "#00B050"
+                color = "#FF4B4B"
                 icon = "▼"
                 sign = ""
             else:
@@ -134,7 +148,6 @@ def render_custom_metric_with_chart(name, df, tickers_dict):
                 icon = "—"
                 sign = ""
             
-            # 1. 渲染上方點擊字卡
             st.markdown(
                 f"""
                 <a href="{target_url}" target="_blank" style="text-decoration: none; color: inherit;">
@@ -157,7 +170,6 @@ def render_custom_metric_with_chart(name, df, tickers_dict):
                 unsafe_allow_html=True
             )
             
-            # 2. 嵌入 TradingView 免費即時迷你分時圖元件 (設定為 1 分鐘線、深色主題)
             tv_html = f"""
             <div class="tradingview-widget-container" style="height:200px; width:100%;">
               <div id="tradingview_{name}" style="height:200px; width:100%;"></div>
@@ -181,7 +193,6 @@ def render_custom_metric_with_chart(name, df, tickers_dict):
               </script>
             </div>
             """
-            # 將分時圖完美無縫貼在卡片下方
             st.components.v1.html(tv_html, height=200)
 
 # --- 介面呈現 ---
@@ -207,8 +218,8 @@ with col7: render_custom_metric_with_chart("費城半導體", df_display, market
 st.markdown("### 📋 數據總覽")
 def style_positive_negative(val):
     if isinstance(val, (int, float)):
-        if val > 0: return 'color: #FF4B4B; font-weight: bold;'
-        elif val < 0: return 'color: #00B050; font-weight: bold;'
+        if val > 0: return 'color: #00B050; font-weight: bold;'
+        elif val < 0: return 'color: #FF4B4B; font-weight: bold;'
     return ''
 
 df_final_table = df_display.fillna("N/A")
