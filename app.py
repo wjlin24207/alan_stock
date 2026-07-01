@@ -91,7 +91,7 @@ st.markdown("---")
 # 2. 美國三大期貨區塊
 st.subheader("🇺🇸 美國重要指數期貨 (夜盤即時動態)")
 col1, col2, col3 = st.columns(3)
-futures_names = ["小型道瓊期貨 (小道瓊)", "小型S&P500期貨 (小S&P)", "小型那斯達克期貨 (小那斯達克)"]
+futures_names = ["小道瓊", "小S&P500", "小那斯達克"]
 cols = [col1, col2, col3]
 
 for name, col in zip(futures_names, cols):
@@ -103,7 +103,7 @@ st.markdown("---")
 # 3. 美國四大現貨指數區塊
 st.subheader("🏛️ 美國現貨指數")
 col4, col5, col6, col7 = st.columns(4)
-index_names = ["道瓊工業指數", "S&P 500 指數", "那斯達克綜合指數", "費城半導體指數"]
+index_names = ["道瓊指數", "S&P500", "那斯達克", "費城半導體"]
 cols_idx = [col4, col5, col6, col7]
 
 for name, col in zip(index_names, cols_idx):
