@@ -6,6 +6,22 @@ import pandas as pd
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
 st.title("📊 全球重要指數與期貨即時看板")
 
+# 🔴 關鍵點 1：注入客製化 CSS，將 Streamlit 原生的「綠漲紅跌」反過來
+st.html(
+    """
+    <style>
+    /* 讓原本是綠色的正數轉為紅色 */
+    [data-testid="stMetricDelta"] svg[text-anchor="middle"] { fill: #FF4B4B !important; }
+    [data-testid="stMetricDelta"] div { color: #FF4B4B !important; }
+    
+    /* 讓原本是紅色的負數轉為綠色 */
+    [data-testid="stMetricDelta"] div[data-pytest="stMetricDeltaValue"] > span:has(svg) { color: #00B050 !important; }
+    [data-testid="stMetricDelta"] svg { fill: #00B050 !important; }
+    div[data-testid="stMetricDelta"] > div { color: #00B050 !important; }
+    </style>
+    """
+)
+
 # 監控的商品代號
 market_tickers = {
     "台指期貨 (近月)": "WTX=F",
@@ -64,7 +80,6 @@ with st.spinner("正在精準同步全球市場最新數據..."):
     df_market = fetch_realtime_api_data(market_tickers)
 
 # --- 數據優化處理 ---
-# 複製一份資料用來做介面呈現，並將數值欄位統一四捨五入到小數後兩位
 df_display = df_market.copy()
 numeric_cols = ["最新價格", "漲跌點數", "漲跌幅 (%)"]
 df_display[numeric_cols] = df_display[numeric_cols].round(2)
@@ -110,13 +125,25 @@ for name, col in zip(index_names, cols_idx):
     with col:
         render_metric_card(name, df_display)
 
-# 4. 資料總表（將 NaN 填補為 "N/A" 方便看盤，且已格式化至小數點後兩位）
+# 4. 資料總表
 st.markdown("### 📋 數據總覽")
-df_final_table = df_display.fillna("N/A")
 
-# 使用 Streamlit 的 column_config 確保千分位逗號與小數點兩位完美呈現
+# 🔴 關鍵點 2：定義函數讓 Pandas 表格的「漲跌點數」與「漲跌幅」也符合紅漲綠跌
+def style_positive_negative(val):
+    if isinstance(val, (int, float)):
+        if val > 0:
+            return 'color: #FF4B4B; font-weight: bold;'  # 正數變紅
+        elif val < 0:
+            return 'color: #00B050; font-weight: bold;'  # 負數變綠
+    return ''
+
+# 處理遺失值並應用顏色樣式
+df_final_table = df_display.fillna("N/A")
+styled_df = df_final_table.style.map(style_positive_negative, subset=["漲跌點數", "漲跌幅 (%)"])
+
+# 渲染表格
 st.dataframe(
-    df_final_table, 
+    styled_df, 
     use_container_width=True,
     column_config={
         "最新價格": st.column_config.NumberColumn(format="%.2f"),
