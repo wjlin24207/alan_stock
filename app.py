@@ -6,25 +6,33 @@ import pandas as pd
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
 st.title("📊 全球重要指數與期貨即時看板")
 
-# 🔴 關鍵點 1：注入客製化 CSS，將 Streamlit 原生的「綠漲紅跌」反過來
+# 🔴 完美修正：全域 CSS 覆蓋，確保現貨與期貨的顏色完全同步為紅漲綠跌
 st.html(
     """
     <style>
-    /* 讓原本是綠色的正數轉為紅色 */
-    [data-testid="stMetricDelta"] svg[text-anchor="middle"] { fill: #FF4B4B !important; }
-    [data-testid="stMetricDelta"] div { color: #FF4B4B !important; }
+    /* 【紅色：正數】強制將所有代表正向變動的文字與箭頭圖標改為紅色 */
+    [data-testid="stMetricDelta"] div,
+    [data-testid="stMetricDelta"] span,
+    [data-testid="stMetricDelta"] svg {
+        color: #FF4B4B !important;
+        fill: #FF4B4B !important;
+    }
     
-    /* 讓原本是紅色的負數轉為綠色 */
-    [data-testid="stMetricDelta"] div[data-pytest="stMetricDeltaValue"] > span:has(svg) { color: #00B050 !important; }
-    [data-testid="stMetricDelta"] svg { fill: #00B050 !important; }
-    div[data-testid="stMetricDelta"] > div { color: #00B050 !important; }
+    /* 【綠色：負數】強制將所有代表負向變動的文字與箭頭圖標改為綠色 */
+    [data-testid="stMetricDelta"] div:has(span[data-pytest="stMetricDeltaValue"]),
+    [data-testid="stMetricDelta"] div[data-pytest="stMetricDeltaValue"],
+    [data-testid="stMetricDelta"] div[data-pytest="stMetricDeltaValue"] > span,
+    [data-testid="stMetricDelta"] div[data-pytest="stMetricDeltaValue"] svg {
+        color: #00B050 !important;
+        fill: #00B050 !important;
+    }
     </style>
     """
 )
 
 # 監控的商品代號
 market_tickers = {
-    "台指期貨": "WTX=F",
+    "台指期貨 (近月)": "WTX=F",
     "小道瓊": "YM=F",
     "小S&P500": "ES=F",
     "小那斯達克": "NQ=F",
@@ -68,7 +76,7 @@ def fetch_realtime_api_data(tickers_dict):
                         
             data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
         except Exception:
-            data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
+            data_list.append({"商品名稱": name, "最新價格": None, "漲跌點現": None, "漲跌幅 (%)": None})
             
     return pd.DataFrame(data_list)
 
@@ -99,12 +107,12 @@ def render_metric_card(name, df):
 
 # 1. 台灣市場區塊
 st.subheader("🇹🇼 台灣期貨市場")
-render_metric_card("台指期貨", df_display)
+render_metric_card("台指期貨 (近月)", df_display)
 
 st.markdown("---")
 
 # 2. 美國三大期貨區塊
-st.subheader("🇺🇸 美國期貨指數")
+st.subheader("🇺🇸 美國重要指數期貨 (夜盤即時動態)")
 col1, col2, col3 = st.columns(3)
 futures_names = ["小道瓊", "小S&P500", "小那斯達克"]
 cols = [col1, col2, col3]
@@ -116,7 +124,7 @@ for name, col in zip(futures_names, cols):
 st.markdown("---")
 
 # 3. 美國四大現貨指數區塊
-st.subheader("🏛️ 美國指數")
+st.subheader("🏛️ 美國現貨指數")
 col4, col5, col6, col7 = st.columns(4)
 index_names = ["道瓊指數", "S&P500", "那斯達克", "費城半導體"]
 cols_idx = [col4, col5, col6, col7]
@@ -128,20 +136,17 @@ for name, col in zip(index_names, cols_idx):
 # 4. 資料總表
 st.markdown("### 📋 數據總覽")
 
-# 🔴 關鍵點 2：定義函數讓 Pandas 表格的「漲跌點數」與「漲跌幅」也符合紅漲綠跌
 def style_positive_negative(val):
     if isinstance(val, (int, float)):
         if val > 0:
-            return 'color: #FF4B4B; font-weight: bold;'  # 正數變紅
+            return 'color: #FF4B4B; font-weight: bold;'
         elif val < 0:
-            return 'color: #00B050; font-weight: bold;'  # 負數變綠
+            return 'color: #00B050; font-weight: bold;'
     return ''
 
-# 處理遺失值並應用顏色樣式
 df_final_table = df_display.fillna("N/A")
 styled_df = df_final_table.style.map(style_positive_negative, subset=["漲跌點數", "漲跌幅 (%)"])
 
-# 渲染表格
 st.dataframe(
     styled_df, 
     use_container_width=True,
