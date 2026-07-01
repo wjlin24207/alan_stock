@@ -115,7 +115,7 @@ for name, col in zip(index_names, cols_idx):
     row = df_market[df_market["商品名稱"] == name].iloc[0]
     with col:
         if row["最新價格"] != "N/A":
-            st.metric(label=name, value=f"{row['最新價格']:,}", delta=f"{row['漲跌點數']筑:+} ({row['漲跌幅 (%)']筑:+_}%)")
+            st.metric(label=name, value=f"{row['最新價格']:,}", delta=f"{row['漲跌點數']:,} ({row['漲跌幅 (%)']:,}%)")
         else:
             st.caption(f"{name} 暫無資料")
 
