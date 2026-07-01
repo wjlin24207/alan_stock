@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import yfinance as yf
 
 # 設定網頁標題與配置
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
@@ -30,6 +31,10 @@ def fetch_realtime_api_data(tickers_dict):
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
             response = requests.get(url, headers=headers, timeout=5)
             
+            current_price = None
+            change = None
+            change_pct = None
+            
             if response.status_code == 200:
                 res_json = response.json()
                 meta = res_json.get('chart', {}).get('result', [{}])[0].get('meta', {})
@@ -41,16 +46,31 @@ def fetch_realtime_api_data(tickers_dict):
                     if current_price and prev_price:
                         change = current_price - prev_price
                         change_pct = (change / prev_price) * 100
-                        
-                        data_list.append({
-                            "商品名稱": name,
-                            "最新價格": float(current_price),
-                            "漲跌點數": float(change),
-                            "漲跌幅 (%)": float(change_pct)
-                        })
-                        continue
-                        
-            data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
+
+            # 🔴 關鍵修正：如果是台指期且沒有即時資料（未開盤），啟動備援機制抓昨日最後價格
+            if name == "台指期貨 (近月)" and (current_price is None or pd.isna(current_price)):
+                try:
+                    # 下載最近 2 天的日 K 線
+                    tx_df = yf.Ticker(ticker).history(period="2d")
+                    if len(tx_df) >= 2:
+                        current_price = tx_df['Close'].iloc[-1]   # 昨天（最新一筆日K）的最後價格
+                        prev_price = tx_df['Close'].iloc[-2]      # 前天的收盤價
+                        change = current_price - prev_price
+                        change_pct = (change / prev_price) * 100
+                except Exception:
+                    pass
+
+            # 封裝數據
+            if current_price is not None:
+                data_list.append({
+                    "商品名稱": name,
+                    "最新價格": float(current_price),
+                    "漲跌點數": float(change) if change is not None else 0.0,
+                    "漲跌幅 (%)": float(change_pct) if change_pct is not None else 0.0
+                })
+            else:
+                data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
+                
         except Exception:
             data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
             
@@ -68,7 +88,7 @@ df_display = df_market.copy()
 numeric_cols = ["最新價格", "漲跌點數", "漲跌幅 (%)"]
 df_display[numeric_cols] = df_display[numeric_cols].round(2)
 
-# --- 自訂精美即時字卡元件 (100% 掌握台股紅漲綠跌邏輯) ---
+# --- 自訂精美即時字卡元件 ---
 def render_custom_metric(name, df):
     row_filter = df[df["商品名稱"] == name]
     if not row_filter.empty:
@@ -165,7 +185,6 @@ def style_positive_negative(val):
 df_final_table = df_display.fillna("N/A")
 styled_df = df_final_table.style.map(style_positive_negative, subset=["漲跌點數", "漲跌幅 (%)"])
 
-# 🔴 修正處：將 "漲跌幅 (%)" 的 format 改為 "%.2f%%"，這樣數字後方就會自動補上 %
 st.dataframe(
     styled_df, 
     use_container_width=True,
