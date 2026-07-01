@@ -19,17 +19,17 @@ market_tickers = {
 }
 
 def fetch_twse_fallback():
-    """ 🔴 最終王牌防線：當 Yahoo 完全封鎖台指期時，直接調用台灣證交所官方 API 拿昨收 """
+    """ 最終王牌防線：當 Yahoo 完全封鎖台指期時，直接調用台灣證交所官方 API 拿昨收 """
     try:
-        # 呼叫證交所發行量加權股價指數歷史資料 API (作為台指期現貨對應保底)
         url = "https://openapi.twse.com.tw/v1/exchangeReport/FMTQIK"
         response = requests.get(url, timeout=4)
         if response.status_code == 200:
             data = response.json()
-            if data:
-                # 拿最後一個交易日的加權指數收盤價來當作台指期的開盤前打底參考
+            if data and len(data) >= 2:
+                # 拿最後一個交易日的加權指數收盤價來當作台指期的參考打底
                 latest_day = data[-1]
                 price = float(latest_day.get("ClosingIndex", "0").replace(',', ''))
+                
                 # 計算與前一天的漲跌
                 prev_day = data[-2]
                 prev_price = float(prev_day.get("ClosingIndex", "0").replace(',', ''))
@@ -68,7 +68,7 @@ def fetch_realtime_api_data(tickers_dict):
                         change = current_price - prev_price
                         change_pct = (change / prev_price) * 100
 
-            # 判斷點：如果是台指期，且 Yahoo API 沒給數字（回傳空值）
+            # 情況 A：API 回傳成功，但台指期的數值是空的（未開盤空窗期）
             if name == "台指期貨 (近月)" and (current_price is None or pd.isna(current_price)):
                 tw_price, tw_change, tw_pct = fetch_twse_fallback()
                 if tw_price:
@@ -85,12 +85,15 @@ def fetch_realtime_api_data(tickers_dict):
                 data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
                 
         except Exception:
-            # 當 Yahoo 連線完全崩潰跳進 except 區塊，如果是台指期，直接走台灣官方防線
+            # 情況 B：當連線完全大失敗跳進 except 區塊，如果是台指期，直接走台灣官方防線
             if name == "台指期貨 (近月)":
                 tw_price, tw_change, tw_pct = fetch_twse_fallback()
                 if tw_price:
                     data_list.append({
-                        "商品名稱": name, "最新價格": float(tw_price), "漲跌點數": float(tw_change), "漲跌幅 (%)": float(tw_pct)
+                        "商品名稱": name, 
+                        "最新價格": float(tw_price), 
+                        "漲跌點數": float(tw_change) if tw_change is not None else 0.0, 
+                        "漲跌幅 (%)": float(tw_pct) if tw_pct is not None else 0.0
                     })
                     continue
             
@@ -116,8 +119,7 @@ def render_custom_metric(name, df):
     if not row_filter.empty:
         row = row_filter.iloc[0]
         price = row["最新價格"]
-        change = row["漲跌點数"] if "漲跌點數" in row else row.get("漲跌點數")
-        change = row["漲跌點數"]
+        change = row["漲跌點數"]  # 🔴 已修正 image_b7dfa4.png 中殘留的重複錯誤程式行
         pct = row["漲跌幅 (%)"]
         
         if pd.notna(price):
