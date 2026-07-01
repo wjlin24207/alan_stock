@@ -8,13 +8,13 @@ st.title("📊 全球重要指數與期貨即時看板")
 
 # 監控的商品代號與對應點數跳轉的外部連結
 market_tickers = {
-    "小道瓊": {"ticker": "YM=F", "url": "https://finance.yahoo.com/quote/YM=F"},
-    "小S&P500": {"ticker": "ES=F", "url": "https://finance.yahoo.com/quote/ES=F"},
-    "小那斯達克": {"ticker": "NQ=F", "url": "https://finance.yahoo.com/quote/NQ=F"},
-    "道瓊指數": {"ticker": "^DJI", "url": "https://finance.yahoo.com/quote/^DJI"},
-    "S&P500": {"ticker": "^GSPC", "url": "https://finance.yahoo.com/quote/^GSPC"},
-    "那斯達克": {"ticker": "^IXIC", "url": "https://finance.yahoo.com/quote/^IXIC"},
-    "費城半導體": {"ticker": "^SOX", "url": "https://finance.yahoo.com/quote/^SOX"}
+    "小道瓊": {"ticker": "YM=F", "url": "https://finance.yahoo.com.tw/quote/YM=F"},
+    "小S&P500": {"ticker": "ES=F", "url": "https://finance.yahoo.com.tw/quote/ES=F"},
+    "小那斯達克": {"ticker": "NQ=F", "url": "https://finance.yahoo.com.tw/quote/NQ=F"},
+    "道瓊指數": {"ticker": "^DJI", "url": "https://finance.yahoo.com.tw/quote/^DJI"},
+    "S&P500": {"ticker": "^GSPC", "url": "https://finance.yahoo.com.tw/quote/^GSPC"},
+    "那斯達克": {"ticker": "^IXIC", "url": "https://finance.yahoo.com.tw/quote/^IXIC"},
+    "費城半導體": {"ticker": "^SOX", "url": "https://finance.yahoo.com.tw/quote/^SOX"}
 }
 
 def fetch_yahoo_historical_fallback(ticker):
