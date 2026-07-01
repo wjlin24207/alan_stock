@@ -70,7 +70,7 @@ def render_metric_card(name, df):
         row = row_filter.iloc[0]
         if row["最新價格"] != "N/A":
             # 修正了這裡的格式化語法，將正負號與小數點正確帶入
-            val_str = f"{row['最新價格']烘:,.2f}"
+            val_str = f"{row['最新價格']:,.2f}"
             delta_str = f"{row['漲跌點數']:+.2f} ({row['漲跌幅 (%)']:+.2f}%)"
             st.metric(label=name, value=val_str, delta=delta_str)
         else:
