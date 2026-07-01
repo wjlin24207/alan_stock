@@ -80,7 +80,7 @@ if taiwan_data["最新價格"] != "N/A":
     st.metric(
         label=taiwan_data["商品名稱"],
         value=f"{taiwan_data['最新價格']:,}",
-        delta=f"{taiwan_data['漲跌點數']筑:+} ({taiwan_data['漲跌幅 (%)']筑:+_}%)"
+        delta=f"{taiwan_data['漲跌點數']:,} ({taiwan_data['漲跌幅 (%)']:,}%)"
     )
 else:
     st.error("無法取得台指期最新數據，可能此時段無報價。")
