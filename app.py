@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import pandas as pd
-import yfinance as yf
 
 # 設定網頁標題與配置
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
@@ -18,6 +17,29 @@ market_tickers = {
     "那斯達克": "^IXIC",
     "費城半導體": "^SOX"
 }
+
+def fetch_twse_fallback():
+    """ 🔴 最終王牌防線：當 Yahoo 完全封鎖台指期時，直接調用台灣證交所官方 API 拿昨收 """
+    try:
+        # 呼叫證交所發行量加權股價指數歷史資料 API (作為台指期現貨對應保底)
+        url = "https://openapi.twse.com.tw/v1/exchangeReport/FMTQIK"
+        response = requests.get(url, timeout=4)
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                # 拿最後一個交易日的加權指數收盤價來當作台指期的開盤前打底參考
+                latest_day = data[-1]
+                price = float(latest_day.get("ClosingIndex", "0").replace(',', ''))
+                # 計算與前一天的漲跌
+                prev_day = data[-2]
+                prev_price = float(prev_day.get("ClosingIndex", "0").replace(',', ''))
+                
+                change = price - prev_price
+                change_pct = (change / prev_price) * 100
+                return price, change, change_pct
+    except Exception:
+        pass
+    return None, None, None
 
 @st.cache_data(ttl=5)  # 快取 5 秒，確保即時刷新
 def fetch_realtime_api_data(tickers_dict):
@@ -46,14 +68,11 @@ def fetch_realtime_api_data(tickers_dict):
                         change = current_price - prev_price
                         change_pct = (change / prev_price) * 100
 
-            # 情況 A：API 回傳成功，但台指期的數值是空的（未開盤空窗期）
+            # 判斷點：如果是台指期，且 Yahoo API 沒給數字（回傳空值）
             if name == "台指期貨 (近月)" and (current_price is None or pd.isna(current_price)):
-                tx_df = yf.Ticker(ticker).history(period="2d")
-                if len(tx_df) >= 2:
-                    current_price = tx_df['Close'].iloc[-1]
-                    prev_price = tx_df['Close'].iloc[-2]
-                    change = current_price - prev_price
-                    change_pct = (change / prev_price) * 100
+                tw_price, tw_change, tw_pct = fetch_twse_fallback()
+                if tw_price:
+                    current_price, change, change_pct = tw_price, tw_change, tw_pct
 
             if current_price is not None:
                 data_list.append({
@@ -66,28 +85,15 @@ def fetch_realtime_api_data(tickers_dict):
                 data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
                 
         except Exception:
-            # 情況 B：🔴 核心修正點 🔴
-            # 當 API 連線完全大失敗跳進 except 區塊時，如果是台指期，再次強迫執行歷史備援
+            # 當 Yahoo 連線完全崩潰跳進 except 區塊，如果是台指期，直接走台灣官方防線
             if name == "台指期貨 (近月)":
-                try:
-                    tx_df = yf.Ticker(ticker).history(period="2d")
-                    if len(tx_df) >= 2:
-                        current_price = tx_df['Close'].iloc[-1]
-                        prev_price = tx_df['Close'].iloc[-2]
-                        change = current_price - prev_price
-                        change_pct = (change / prev_price) * 100
-                        
-                        data_list.append({
-                            "商品名稱": name,
-                            "最新價格": float(current_price),
-                            "漲跌點數": float(change),
-                            "漲跌幅 (%)": float(change_pct)
-                        })
-                        continue
-                except Exception:
-                    pass
+                tw_price, tw_change, tw_pct = fetch_twse_fallback()
+                if tw_price:
+                    data_list.append({
+                        "商品名稱": name, "最新價格": float(tw_price), "漲跌點數": float(tw_change), "漲跌幅 (%)": float(tw_pct)
+                    })
+                    continue
             
-            # 其餘商品失敗或台指期連日線都掛掉的最終保底
             data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
             
     return pd.DataFrame(data_list)
@@ -110,6 +116,7 @@ def render_custom_metric(name, df):
     if not row_filter.empty:
         row = row_filter.iloc[0]
         price = row["最新價格"]
+        change = row["漲跌點数"] if "漲跌點數" in row else row.get("漲跌點數")
         change = row["漲跌點數"]
         pct = row["漲跌幅 (%)"]
         
