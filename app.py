@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import pandas as pd
-from FinMind.data import DataLoader
 
 # 設定網頁標題與配置
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
@@ -19,45 +18,24 @@ market_tickers = {
     "費城半導體": "^SOX"
 }
 
-def fetch_finmind_taifex():
-    """ 🔴 台灣在地防線：當 Yahoo 裝死時，直接調用 FinMind 抓取台灣期交所台指期 (TXF) 的昨收資料 """
-    try:
-        api = DataLoader()
-        # 抓取最近 5 天的台指期日線資料
-        df = api.taiwan_futures_daily(
-            futures_id="TXF",
-            start_date=(pd.Timestamp.now() - pd.Timedelta(days=10)).strftime('%Y-%m-%d')
-        )
-        if not df.empty and len(df) >= 2:
-            # 依日期排序，確保拿到最新資料
-            df = df.sort_values('date')
-            
-            # 拔出最後一天（昨天）與倒數第二天（前天）的收盤價 (close)
-            current_price = float(df['close'].iloc[-1])
-            prev_price = float(df['close'].iloc[-2])
-            
-            change = current_price - prev_price
-            change_pct = (change / prev_price) * 100
-            return current_price, change, change_pct
-    except Exception:
-        pass
-    return None, None, None
-
-def fetch_yfinance_daily_fallback(ticker):
-    """ 美股商品日線保底接口 """
+def fetch_yahoo_historical_fallback(ticker):
+    """ 🔴 核心保底：免套件！直接用純 requests 抓取 Yahoo 官方歷史日線 JSON 封包 """
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=3)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=4)
         if response.status_code == 200:
             res_json = response.json()
             result = res_json.get('chart', {}).get('result', [{}])[0]
             indicators = result.get('indicators', {}).get('quote', [{}])[0]
+            # 濾掉可能存在的空值，拿到純收盤價陣列
             close_prices = [p for p in indicators.get('close', []) if p is not None]
             
             if len(close_prices) >= 2:
-                current_price = close_prices[-1]
-                prev_price = close_prices[-2]
+                current_price = close_prices[-1]  # 最新一個交易日的收盤價
+                prev_price = close_prices[-2]     # 前一個交易日的收盤價
                 change = current_price - prev_price
                 change_pct = (change / prev_price) * 100
                 return current_price, change, change_pct
@@ -77,7 +55,7 @@ def fetch_realtime_api_data(tickers_dict):
         change = None
         change_pct = None
         try:
-            # 1. 優先嘗試 Yahoo 即時接口
+            # 1. 優先嘗試 Yahoo 即時分 K 接口
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
             response = requests.get(url, headers=headers, timeout=4)
             
@@ -91,18 +69,12 @@ def fetch_realtime_api_data(tickers_dict):
                         change = current_price - prev_price
                         change_pct = (change / prev_price) * 100
 
-            # 2. 如果 Yahoo 沒資料或回傳空值，立刻啟動對應保底
+            # 2. 核心判斷：如果即時接口沒吐資料（例如台指期未開盤時）
             if current_price is None or pd.isna(current_price):
-                if name == "台指期貨 (近月)":
-                    # 🔴 台指期專屬：呼叫 FinMind 台灣期交所防線
-                    fm_price, fm_change, fm_pct = fetch_finmind_taifex()
-                    if fm_price:
-                        current_price, change, change_pct = fm_price, fm_change, fm_pct
-                else:
-                    # 美股商品：走 Yahoo 日線保底
-                    yf_price, yf_change, yf_pct = fetch_yfinance_daily_fallback(ticker)
-                    if yf_price:
-                        current_price, change, change_pct = yf_price, yf_change, yf_pct
+                # 直接啟動純 requests 日線保底，強行把昨收的數值挖出來
+                yf_price, yf_change, yf_pct = fetch_yahoo_historical_fallback(ticker)
+                if yf_price:
+                    current_price, change, change_pct = yf_price, yf_change, yf_pct
 
             if current_price is not None:
                 data_list.append({
@@ -115,19 +87,17 @@ def fetch_realtime_api_data(tickers_dict):
                 data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
                 
         except Exception:
-            # 最終無條件全面潰敗保底
-            if name == "台指期貨 (近月)":
-                fm_price, fm_change, fm_pct = fetch_finmind_taifex()
-                if fm_price:
-                    data_list.append({"商品名稱": name, "最新價格": float(fm_price), "漲跌點數": float(fm_change), "漲跌幅 (%)": float(fm_pct)})
-                    continue
+            # 萬一整個 try 區塊發生非預期崩潰，做最後一線的日線保底
+            yf_price, yf_change, yf_pct = fetch_yahoo_historical_fallback(ticker)
+            if yf_price is not None:
+                data_list.append({
+                    "商品名稱": name, 
+                    "最新價格": float(yf_price), 
+                    "漲跌點數": float(yf_change) if yf_change is not None else 0.0, 
+                    "漲跌幅 (%)": float(yf_pct) if yf_pct is not None else 0.0
+                })
             else:
-                yf_price, yf_change, yf_pct = fetch_yfinance_daily_fallback(ticker)
-                if yf_price:
-                    data_list.append({"商品名稱": name, "最新價格": float(yf_price), "漲跌點數": float(yf_change), "漲跌幅 (%)": float(yf_pct)})
-                    continue
-                    
-            data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
+                data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
             
     return pd.DataFrame(data_list)
 
@@ -162,7 +132,7 @@ def render_custom_metric(name, df):
                 icon = "▼"
                 sign = ""
             else:
-                color = "#888888"
+                color = "#888888"  # 平盤
                 icon = "—"
                 sign = ""
             
