@@ -68,7 +68,7 @@ df_display = df_market.copy()
 numeric_cols = ["最新價格", "漲跌點數", "漲跌幅 (%)"]
 df_display[numeric_cols] = df_display[numeric_cols].round(2)
 
-# --- 自訂精美即時字卡元件 (🔴 100% 掌握台股紅漲綠跌邏輯) ---
+# --- 自訂精美即時字卡元件 (100% 掌握台股紅漲綠跌邏輯) ---
 def render_custom_metric(name, df):
     row_filter = df[df["商品名稱"] == name]
     if not row_filter.empty:
@@ -78,13 +78,12 @@ def render_custom_metric(name, df):
         pct = row["漲跌幅 (%)"]
         
         if pd.notna(price):
-            # 由 Python 後端直接判斷顏色與箭頭符號
             if change > 0:
-                color = "#FF4B4B"  # 台灣習慣：上漲為紅
+                color = "#FF4B4B"  # 上漲為紅
                 icon = "▲"
                 sign = "+"
             elif change < 0:
-                color = "#00B050"  # 台灣習慣：下跌為綠
+                color = "#00B050"  # 下跌為綠
                 icon = "▼"
                 sign = ""
             else:
@@ -92,7 +91,6 @@ def render_custom_metric(name, df):
                 icon = "—"
                 sign = ""
             
-            # 透過 HTML/CSS 渲染出比官方更精美的深色系金融字卡
             st.markdown(
                 f"""
                 <div style="
@@ -167,9 +165,11 @@ def style_positive_negative(val):
 df_final_table = df_display.fillna("N/A")
 styled_df = df_final_table.style.map(style_positive_negative, subset=["漲跌點數", "漲跌幅 (%)"])
 
+# 🔴 修正處：加入了 hide_index=True 隱藏左側的 01234567 序號
 st.dataframe(
     styled_df, 
     use_container_width=True,
+    hide_index=True,
     column_config={
         "最新價格": st.column_config.NumberColumn(format="%.2f"),
         "漲跌點數": st.column_config.NumberColumn(format="%.2f"),
