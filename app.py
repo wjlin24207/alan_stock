@@ -6,7 +6,7 @@ import pandas as pd
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
 st.title("📊 全球重要指數與期貨即時看板")
 
-# 監控的商品代號
+# 監控的商品代號 (一律保持此順序)
 market_tickers = {
     "台指期貨 (近月)": "WTX=F",
     "小道瓊": "YM=F",
@@ -42,46 +42,67 @@ def fetch_yahoo_historical_fallback(ticker):
         pass
     return None, None, None
 
-@st.cache_data(ttl=5)  # 快取 5 秒，確保即時刷新
+def fetch_taifex_realtime():
+    """ 臺灣期交所官方 API 應急通道 """
+    try:
+        url = "https://mis.taifex.com.tw/mis/api/getMarketInfo"
+        payload = {"MarketType": "0", "SymbolType": "F"}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Content-Type': 'application/json'
+        }
+        response = requests.post(url, json=payload, headers=headers, timeout=3)
+        if response.status_code == 200:
+            res_json = response.json()
+            ResultList = res_json.get('ResultData', {}).get('ResultList', [])
+            for item in ResultList:
+                # 尋找期交所夜盤/常規綜合的台指期近月合約 (TX)
+                if item.get('CommodityId') == 'TX' and item.get('MarketType') == '1':
+                    current_price = float(item.get('Price', '0'))
+                    change = float(item.get('Change', '0'))
+                    if current_price > 0:
+                        prev_price = current_price - change
+                        change_pct = (change / prev_price) * 100 if prev_price != 0 else 0.0
+                        return current_price, change, change_pct
+    except Exception:
+        pass
+    return None, None, None
+
+@st.cache_data(ttl=5)  # 快取 5 秒
 def fetch_realtime_api_data(tickers_dict):
     data_list = []
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
     
-    # 用來暫存美股期貨的漲跌幅，供台指期夜盤影子連動使用
-    us_lead_pct = None
-    
-    # 為了確保先拿到美股期貨的數據來幫台指期導航，我們調整一下抓取順序，先抓美股商品
-    sorted_items = sorted(tickers_dict.items(), key=lambda x: 0 if x[0] == "小那斯達克" else 1)
-    
+    # 建立一個臨時字典儲存抓取結果，確保最後輸出順序完全與 market_tickers 一致
     raw_results = {}
+    us_lead_pct = 0.0  # 美股導航預設平盤
     
-    for name, ticker in sorted_items:
+    # 按照字典順序依序抓取
+    for name, ticker in tickers_dict.items():
         current_price = None
         change = None
         change_pct = None
         try:
-            # 1. 優先嘗試 Quote 快照接口
+            # 1. 嘗試 Yahoo Quote 快照接口
             quote_url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={ticker}"
-            quote_res = requests.get(quote_url, headers=headers, timeout=4)
+            quote_res = requests.get(quote_url, headers=headers, timeout=3)
             
             if quote_res.status_code == 200:
                 quote_json = quote_res.json()
                 result = quote_json.get('quoteResponse', {}).get('result', [{}])[0]
                 if result:
-                    current_price = result.get('regularMarketPrice')
+                    current_price = result.get('regularMarketPrice') or result.get('postMarketPrice') or result.get('preMarketPrice')
                     prev_price = result.get('regularMarketPreviousClose')
-                    if current_price is None:
-                        current_price = result.get('postMarketPrice') or result.get('preMarketPrice')
                     if current_price and prev_price:
                         change = current_price - prev_price
                         change_pct = (change / prev_price) * 100
 
-            # 2. 備援嘗試：即時分 K 線 (chart) 接口
+            # 2. 嘗試 Yahoo Chart 即時分 K 接口 (美股期貨盤後很穩)
             if current_price is None or pd.isna(current_price):
                 url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
-                response = requests.get(url, headers=headers, timeout=4)
+                response = requests.get(url, headers=headers, timeout=3)
                 if response.status_code == 200:
                     res_json = response.json()
                     meta = res_json.get('chart', {}).get('result', [{}])[0].get('meta', {})
@@ -92,13 +113,24 @@ def fetch_realtime_api_data(tickers_dict):
                             change = current_price - prev_price
                             change_pct = (change / prev_price) * 100
 
-            # 3. 歷史日線保底
+            # 3. 如果是台指期，且前面接口皆卡死，立刻調用最穩定的「日 K 線接口」直接拿當下夜盤最新 Close 價
+            if name == "台指期貨 (近月)" and (current_price is None or pd.isna(current_price)):
+                yf_price, yf_change, yf_pct = fetch_yahoo_historical_fallback(ticker)
+                if yf_price:
+                    current_price, change, change_pct = yf_price, yf_change, yf_pct
+                else:
+                    # 日線也被擋，改走期交所官方網頁 API
+                    tw_price, tw_change, tw_pct = fetch_taifex_realtime()
+                    if tw_price:
+                        current_price, change, change_pct = tw_price, tw_change, tw_pct
+
+            # 4. 美股大盤底層歷史保底
             if current_price is None or pd.isna(current_price):
                 yf_price, yf_change, yf_pct = fetch_yahoo_historical_fallback(ticker)
                 if yf_price:
                     current_price, change, change_pct = yf_price, yf_change, yf_pct
 
-            # 記錄小那斯達克的即時幅度，留給台指期備用
+            # 儲存小那斯達克的即時漲跌幅，供台指期影子保底使用
             if name == "小那斯達克" and change_pct is not None:
                 us_lead_pct = change_pct
                 
@@ -106,31 +138,25 @@ def fetch_realtime_api_data(tickers_dict):
         except Exception:
             raw_results[name] = (None, None, None)
 
-    # 🔴 核心反規避邏輯：智慧影子連動保底
+    # 🔴 最終全域影子交叉保底：若台指期算出來點數依然為 0 或 None，強行拿小那斯達克當下的即時幅反推
     tx_price, tx_change, tx_pct = raw_results.get("台指期貨 (近月)", (None, None, None))
-    # 如果台指期拿到的漲跌點數是 0 (代表被歷史日線昨收卡死)，且美股小那斯達克正在動
-    if (tx_change == 0 or tx_change is None) and us_lead_pct is not None and us_lead_pct != 0:
-        # 抓取台指期的歷史收盤打底價
+    if (tx_change == 0 or tx_change is None) and us_lead_pct != 0.0:
         tx_hist_price, _, _ = fetch_yahoo_historical_fallback("WTX=F")
         if tx_hist_price:
-            # 使用小那斯達克的漲跌幅，影子反推台指期夜盤的模擬即時跳動點數
             tx_pct = us_lead_pct
             tx_change = tx_hist_price * (tx_pct / 100)
             tx_price = tx_hist_price + tx_change
             raw_results["台指期貨 (近月)"] = (tx_price, tx_change, tx_pct)
 
-    # 重新組裝回原本字典的順序排列
+    # 🔴 關鍵修正：嚴格遵循原本定義的順序進行 DataFrame 組裝，避免行對齊出錯
     for name in tickers_dict.keys():
         c_price, chg, chg_p = raw_results.get(name, (None, None, None))
-        if c_price is not None:
-            data_list.append({
-                "商品名稱": name,
-                "最新價格": float(c_price),
-                "漲跌點數": float(chg) if chg is not None else 0.0,
-                "漲跌幅 (%)": float(chg_p) if chg_p is not None else 0.0
-            })
-        else:
-            data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
+        data_list.append({
+            "商品名稱": name,
+            "最新價格": float(c_price) if c_price is not None else 0.0,
+            "漲跌點數": float(chg) if chg is not None else 0.0,
+            "漲跌幅 (%)": float(chg_p) if chg_p is not None else 0.0
+        })
 
     return pd.DataFrame(data_list)
 
@@ -155,7 +181,8 @@ def render_custom_metric(name, df):
         change = row["漲跌點數"]
         pct = row["漲跌幅 (%)"]
         
-        if pd.notna(price):
+        # 只要最新價格大於 0 就必然會完美呈現卡片
+        if price > 0:
             if change > 0:
                 color = "#FF4B4B"  # 紅漲
                 icon = "▲"
@@ -199,7 +226,7 @@ def render_custom_metric(name, df):
                     margin-bottom: 12px;
                 ">
                     <div style="color: #AEB3B7; font-size: 14px;">{name}</div>
-                    <div style="color: #FF4B4B; font-size: 16px; font-weight: bold; margin-top: 5px;">⚠️ 盤後休市或嘗試重新連線中</div>
+                    <div style="color: #FF4B4B; font-size: 16px; font-weight: bold; margin-top: 5px;">⚠️ 嘗試建立備援安全連線中...</div>
                 </div>
                 """, 
                 unsafe_allow_html=True
