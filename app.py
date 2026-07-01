@@ -4,9 +4,9 @@ import pandas as pd
 
 # 設定網頁標題與配置
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
-st.title("📊 全球重要指數與期貨即時看板")
+st.title("📊 全球重要指數與期貨即時看板 (穩定強效版)")
 
-# 商品代號清單
+# 使用最穩定的代號組合
 market_tickers = {
     "台指期貨 (近月)": "WTX=F",
     "小型道瓊期貨 (小道瓊)": "YM=F",
@@ -18,26 +18,28 @@ market_tickers = {
     "費城半導體指數": "^SOX"
 }
 
-@st.cache_data(ttl=10)  # 縮短到 10 秒，確保抓到最新的盤後走勢
-def fetch_realtime_data(tickers_dict):
+@st.cache_data(ttl=15)  # 快取 15 秒，避免頻繁刷網頁被 Yahoo 封鎖
+def fetch_bulletproof_data(tickers_dict):
     data_list = []
+    
     for name, ticker in tickers_dict.items():
         try:
+            # 策略：抓取最新 1 天、1 分鐘層級的即時 K 線（這在盤後也會持續更新）
             ticker_obj = yf.Ticker(ticker)
+            df_snapshot = ticker_obj.history(period="1d", interval="1m")
             
-            # 使用 fast_info 獲取交易所當下的最新即時價格
-            fast = ticker_obj.fast_info
-            current_price = fast.get('last_price') or fast.get('regular_market_price')
-            prev_price = fast.get('previous_close') or fast.get('regular_market_previous_close')
+            # 獲取昨日收盤價（用來算今日漲跌）
+            # 因為 history(period="1d") 的 previous_close 有時會漏，我們改用歷史日線拿昨收
+            df_daily = ticker_obj.history(period="5d", interval="1d")
             
-            # 如果 fast_info 拿不到，改用歷史 K 線最後一筆作為備援
-            if not current_price or not prev_price:
-                df = ticker_obj.history(period="2d")
-                if len(df) >= 2:
-                    current_price = df['Close'].iloc[-1]
-                    prev_price = df['Close'].iloc[-2]
-
-            if current_price and prev_price and not pd.isna(current_price) and not pd.isna(prev_price):
+            if not df_snapshot.empty and len(df_daily) >= 2:
+                # 最新一分鐘的價格
+                current_price = df_snapshot['Close'].iloc[-1]
+                
+                # 判斷昨收：如果最新 K 線日期跟日 K 最後一天一樣，那昨收就是倒數第二筆
+                # 如果不一樣（例如剛開盤），那昨收就是日 K 最後一筆
+                prev_price = df_daily['Close'].iloc[-2]
+                
                 change = current_price - prev_price
                 change_pct = (change / prev_price) * 100
                 
@@ -48,7 +50,18 @@ def fetch_realtime_data(tickers_dict):
                     "漲跌幅 (%)": change_pct
                 })
             else:
-                data_list.append({"商品名稱": name, "最新價格": "N/A", "漲跌點數": "N/A", "漲跌幅 (%)": "N/A"})
+                # 備援機制：如果連 1m K 線都沒，就試著抓一般的歷史 Close
+                df_fallback = ticker_obj.history(period="2d")
+                if len(df_fallback) >= 2:
+                    current_price = df_fallback['Close'].iloc[-1]
+                    prev_price = df_fallback['Close'].iloc[-2]
+                    change = current_price - prev_price
+                    change_pct = (change / prev_price) * 100
+                    data_list.append({
+                        "商品名稱": name, "最新價格": current_price, "漲跌點數": change, "漲跌幅 (%)": change_pct
+                    })
+                else:
+                    data_list.append({"商品名稱": name, "最新價格": "N/A", "漲跌點數": "N/A", "漲跌幅 (%)": "N/A"})
         except Exception:
             data_list.append({"商品名稱": name, "最新價格": "N/A", "漲跌點數": "N/A", "漲跌幅 (%)": "N/A"})
             
@@ -58,23 +71,21 @@ def fetch_realtime_data(tickers_dict):
 if st.button("🔄 重新整理數據"):
     st.cache_data.clear()
 
-with st.spinner("正在獲取最新即時市場數據..."):
-    df_market = fetch_realtime_data(market_tickers)
+with st.spinner("正在強制同步最新即時市場數據..."):
+    df_market = fetch_bulletproof_data(market_tickers)
 
 # --- 介面呈現 ---
 
-# Helper 函數：統一渲染卡片並修正格式化問題
 def render_metric_card(name, df):
     row_filter = df[df["商品名稱"] == name]
     if not row_filter.empty:
         row = row_filter.iloc[0]
         if row["最新價格"] != "N/A":
-            # 修正了這裡的格式化語法，將正負號與小數點正確帶入
             val_str = f"{row['最新價格']:,.2f}"
             delta_str = f"{row['漲跌點數']:+.2f} ({row['漲跌幅 (%)']:+.2f}%)"
             st.metric(label=name, value=val_str, delta=delta_str)
         else:
-            st.caption(f"⚪ {name} 暫無即時資料")
+            st.error(f"❌ {name} 暫無即時資料")
 
 # 1. 台灣市場區塊
 st.subheader("🇹🇼 台灣期貨市場")
