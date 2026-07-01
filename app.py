@@ -27,13 +27,12 @@ def fetch_realtime_api_data(tickers_dict):
     }
     
     for name, ticker in tickers_dict.items():
+        current_price = None
+        change = None
+        change_pct = None
         try:
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
             response = requests.get(url, headers=headers, timeout=5)
-            
-            current_price = None
-            change = None
-            change_pct = None
             
             if response.status_code == 200:
                 res_json = response.json()
@@ -47,20 +46,15 @@ def fetch_realtime_api_data(tickers_dict):
                         change = current_price - prev_price
                         change_pct = (change / prev_price) * 100
 
-            # 🔴 關鍵修正：如果是台指期且沒有即時資料（未開盤），啟動備援機制抓昨日最後價格
+            # 情況 A：API 回傳成功，但台指期的數值是空的（未開盤空窗期）
             if name == "台指期貨 (近月)" and (current_price is None or pd.isna(current_price)):
-                try:
-                    # 下載最近 2 天的日 K 線
-                    tx_df = yf.Ticker(ticker).history(period="2d")
-                    if len(tx_df) >= 2:
-                        current_price = tx_df['Close'].iloc[-1]   # 昨天（最新一筆日K）的最後價格
-                        prev_price = tx_df['Close'].iloc[-2]      # 前天的收盤價
-                        change = current_price - prev_price
-                        change_pct = (change / prev_price) * 100
-                except Exception:
-                    pass
+                tx_df = yf.Ticker(ticker).history(period="2d")
+                if len(tx_df) >= 2:
+                    current_price = tx_df['Close'].iloc[-1]
+                    prev_price = tx_df['Close'].iloc[-2]
+                    change = current_price - prev_price
+                    change_pct = (change / prev_price) * 100
 
-            # 封裝數據
             if current_price is not None:
                 data_list.append({
                     "商品名稱": name,
@@ -72,6 +66,28 @@ def fetch_realtime_api_data(tickers_dict):
                 data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
                 
         except Exception:
+            # 情況 B：🔴 核心修正點 🔴
+            # 當 API 連線完全大失敗跳進 except 區塊時，如果是台指期，再次強迫執行歷史備援
+            if name == "台指期貨 (近月)":
+                try:
+                    tx_df = yf.Ticker(ticker).history(period="2d")
+                    if len(tx_df) >= 2:
+                        current_price = tx_df['Close'].iloc[-1]
+                        prev_price = tx_df['Close'].iloc[-2]
+                        change = current_price - prev_price
+                        change_pct = (change / prev_price) * 100
+                        
+                        data_list.append({
+                            "商品名稱": name,
+                            "最新價格": float(current_price),
+                            "漲跌點數": float(change),
+                            "漲跌幅 (%)": float(change_pct)
+                        })
+                        continue
+                except Exception:
+                    pass
+            
+            # 其餘商品失敗或台指期連日線都掛掉的最終保底
             data_list.append({"商品名稱": name, "最新價格": None, "漲跌點數": None, "漲跌幅 (%)": None})
             
     return pd.DataFrame(data_list)
@@ -88,7 +104,7 @@ df_display = df_market.copy()
 numeric_cols = ["最新價格", "漲跌點數", "漲跌幅 (%)"]
 df_display[numeric_cols] = df_display[numeric_cols].round(2)
 
-# --- 自訂精美即時字卡元件 ---
+# --- 自訂精美即時字卡元件 (100% 掌握台股紅漲綠跌邏輯) ---
 def render_custom_metric(name, df):
     row_filter = df[df["商品名稱"] == name]
     if not row_filter.empty:
@@ -133,7 +149,13 @@ def render_custom_metric(name, df):
         else:
             st.markdown(
                 f"""
-                <div style="background-color: #1E222D; padding: 16px; border-radius: 10px; border-left: 6px solid #FF4B4B;">
+                <div style="
+                    background-color: #1E222D; 
+                    padding: 16px; 
+                    border-radius: 10px; 
+                    border-left: 6px solid #FF4B4B;
+                    margin-bottom: 12px;
+                ">
                     <div style="color: #AEB3B7; font-size: 14px;">{name}</div>
                     <div style="color: #FF4B4B; font-size: 16px; font-weight: bold; margin-top: 5px;">❌ 即時資料獲取失敗</div>
                 </div>
