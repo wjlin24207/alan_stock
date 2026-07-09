@@ -15,7 +15,8 @@ market_tickers = {
     "S&P500": {"ticker": "^GSPC", "url": "https://finance.yahoo.com.tw/quote/^GSPC"},
     "那斯達克": {"ticker": "^IXIC", "url": "https://finance.yahoo.com.tw/quote/^IXIC"},
     "費城半導體": {"ticker": "^SOX", "url": "https://finance.yahoo.com.tw/quote/^SOX"},
-    "台積電ADR": {"ticker": "TSM", "url": "https://finance.yahoo.com/quote/TSM"}
+    "台積電ADR": {"ticker": "TSM", "url": "https://finance.yahoo.com/quote/TSM"},
+    "日月光ADR": {"ticker": "ASX", "url": "https://finance.yahoo.com/quote/ASX"}
 
 }
 
