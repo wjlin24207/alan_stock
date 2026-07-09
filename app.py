@@ -129,7 +129,7 @@ with col_refresh2:
 with col_refresh3:
     refresh_sec = st.number_input(
         "刷新秒數",
-        min_value=10,
+        min_value=30,
         max_value=3600,
         value=30,
         step=30
