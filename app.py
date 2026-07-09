@@ -113,8 +113,7 @@ def fetch_realtime_api_data(tickers_dict):
     return pd.DataFrame(data_list)
 
 # 重新整理按鈕
-c
-ol_refresh1, col_refresh2, col_refresh3 = st.columns([1, 1, 2])
+col_refresh1, col_refresh2, col_refresh3 = st.columns([1, 1, 2])
 
 with col_refresh1:
     if st.button("🔄 點擊強制刷新最新跳動"):
