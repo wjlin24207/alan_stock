@@ -113,28 +113,23 @@ def fetch_realtime_api_data(tickers_dict):
     return pd.DataFrame(data_list)
 
 # 重新整理按鈕
+col1, col2, col3 = st.columns([2,1,1])
 
-col_refresh1, col_refresh2, col_refresh3 = st.columns([1, 1, 2])
-
-with col_refresh1:
+with col1:
     if st.button("🔄 點擊強制刷新最新跳動"):
         st.cache_data.clear()
         st.rerun()
 
-with col_refresh2:
-    auto_refresh = st.toggle(
-        "自動刷新",
-        value=False
+with col2:
+    auto_refresh = st.checkbox("自動刷新")
+
+with col3:
+    refresh_sec = st.number_input(
+        "秒數",
+        min_value=1,
+        value=5
     )
 
-with col_refresh3:
-    refresh_sec = st.number_input(
-        "刷新秒數",
-        min_value=1,
-        max_value=3600,
-        value=5,
-        step=1
-    )
 
 
 with st.spinner("正在精準同步全球市場最新數據..."):
