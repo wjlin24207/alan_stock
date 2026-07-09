@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import time
 
 # 設定網頁標題與配置
 st.set_page_config(page_title="全球重要指數與期貨看板", layout="wide")
@@ -112,8 +113,29 @@ def fetch_realtime_api_data(tickers_dict):
     return pd.DataFrame(data_list)
 
 # 重新整理按鈕
-if st.button("🔄 點擊強制刷新最新跳動"):
-    st.cache_data.clear()
+
+col_refresh1, col_refresh2, col_refresh3 = st.columns([1, 1, 2])
+
+with col_refresh1:
+    if st.button("🔄 點擊強制刷新最新跳動"):
+        st.cache_data.clear()
+        st.rerun()
+
+with col_refresh2:
+    auto_refresh = st.toggle(
+        "自動刷新",
+        value=False
+    )
+
+with col_refresh3:
+    refresh_sec = st.number_input(
+        "刷新秒數",
+        min_value=1,
+        max_value=3600,
+        value=5,
+        step=1
+    )
+
 
 with st.spinner("正在精準同步全球市場最新數據..."):
     df_market = fetch_realtime_api_data(market_tickers)
@@ -223,3 +245,9 @@ st.dataframe(
         "漲跌幅 (%)": st.column_config.NumberColumn(format="%.2f%%")
     }
 )
+
+# ===== 自動刷新 =====
+if auto_refresh:
+    time.sleep(refresh_sec)
+    st.rerun()
+
