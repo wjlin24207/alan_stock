@@ -1,3 +1,7 @@
+import json
+import re
+import html
+import urllib3
 import streamlit as st
 import requests
 import pandas as pd
@@ -12,6 +16,7 @@ market_tickers = {
     "小道瓊": {"ticker": "YM=F", "url": "https://finance.yahoo.com.tw/quote/YM=F"},
     "小S&P500": {"ticker": "ES=F", "url": "https://finance.yahoo.com.tw/quote/ES=F"},
     "小那斯達克": {"ticker": "NQ=F", "url": "https://finance.yahoo.com.tw/quote/NQ=F"},
+    "台指期夜盤": {"ticker": "TXF1", "url": "https://www.cmoney.tw/forum/futures/TXF1?s=p"},
     "道瓊指數": {"ticker": "^DJI", "url": "https://finance.yahoo.com.tw/quote/^DJI"},
     "S&P500": {"ticker": "^GSPC", "url": "https://finance.yahoo.com.tw/quote/^GSPC"},
     "那斯達克": {"ticker": "^IXIC", "url": "https://finance.yahoo.com.tw/quote/^IXIC"},
@@ -44,6 +49,51 @@ def fetch_yahoo_historical_fallback(ticker):
     except Exception:
         pass
     return None, None, None
+
+def fetch_txf_night():
+    try:
+        urllib3.disable_warnings()
+
+        url = "https://www.cmoney.tw/forum/futures/TXF1?s=p"
+
+        r = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            verify=False,
+            timeout=10
+        )
+
+        page = r.text
+
+        m = re.search(
+            r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>',
+            page,
+            re.S
+        )
+
+        if not m:
+            return None
+
+        json_text = html.unescape(m.group(1))
+        data = json.loads(json_text)
+
+        props = data[0]["@graph"][2]["additionalProperty"]
+
+        result = {}
+
+        for item in props:
+            result[item["name"]] = item["value"]
+
+        return {
+            "商品名稱": "台指期夜盤",
+            "最新價格": float(result["成交"]),
+            "漲跌點數": float(result["漲跌"]),
+            "漲跌幅 (%)": float(result["漲跌幅"])
+        }
+
+    except Exception as e:
+        print("TXF Error:", e)
+        return None
 
 @st.cache_data(ttl=5)  # 快取 5 秒
 def fetch_realtime_api_data(tickers_dict):
@@ -101,15 +151,26 @@ def fetch_realtime_api_data(tickers_dict):
             raw_results[name] = (current_price, change, change_pct)
 
     # 按照標準順序組裝
+    # 按照標準順序組裝
     for name in tickers_dict.keys():
         c_price, chg, chg_p = raw_results.get(name, (0.0, 0.0, 0.0))
+    
         data_list.append({
             "商品名稱": name,
             "最新價格": float(c_price),
             "漲跌點數": float(chg),
             "漲跌幅 (%)": float(chg_p)
         })
-
+    
+    # 覆蓋台指期夜盤資料
+    txf_data = fetch_txf_night()
+    
+    if txf_data:
+        for i, row in enumerate(data_list):
+            if row["商品名稱"] == "台指期夜盤":
+                data_list[i] = txf_data
+                break
+    
     return pd.DataFrame(data_list)
 
 # 重新整理按鈕
@@ -202,9 +263,9 @@ def render_custom_metric(name, df, tickers_dict):
 
 # 1. 美國三大期貨區塊
 st.subheader("🇺🇸 美國重要指數期貨 (夜盤即時動態)")
-col1, col2, col3 = st.columns(3)
-futures_names = ["小道瓊", "小S&P500", "小那斯達克"]
-cols = [col1, col2, col3]
+col1, col2, col3, col4 = st.columns(4)
+futures_names = ["小道瓊", "小S&P500", "小那斯達克", "台指期夜盤"]
+cols = [col1, col2, col3, col4]
 
 for name, col in zip(futures_names, cols):
     with col:
